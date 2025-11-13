@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -14,15 +15,14 @@ jobs:
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '21'
-          cache: 'gradle'
+          cache: gradle
 
       - name: Ensure gradlew is executable
         run: chmod +x ./gradlew
 
       - name: Build with Gradle (shadowJar)
-        # use shell so we can capture output & fail on errors
         run: |
           ./gradlew --no-daemon clean shadowJar --stacktrace
         env:
@@ -41,14 +41,11 @@ jobs:
       - name: Find plugin .jar
         id: find_jar
         run: |
-          # Try a few common approaches, pick the newest artifact that is not sources/javadoc
-          # 1) prefer explicit build/libs in project root
           JAR_FILE=""
           if [ -d "build/libs" ]; then
             JAR_FILE=$(ls -t build/libs/*.jar 2>/dev/null | grep -vE 'sources|javadoc' | head -n1 || true)
           fi
 
-          # 2) fallback: search any subproject's build/libs
           if [ -z "$JAR_FILE" ]; then
             JAR_FILE=$(find . -path "*/build/libs/*.jar" -type f ! -name "*sources*" ! -name "*javadoc*" -print | head -n1 || true)
           fi
@@ -61,15 +58,15 @@ jobs:
           fi
 
           echo "Found jar: $JAR_FILE"
-          echo "jar_path=$JAR_FILE" >> $GITHUB_OUTPUT
-          echo "jar_name=$(basename "$JAR_FILE")" >> $GITHUB_OUTPUT
+          echo "jar_path=$JAR_FILE" >> "$GITHUB_OUTPUT"
+          echo "jar_name=$(basename "$JAR_FILE")" >> "$GITHUB_OUTPUT"
 
       - name: Upload .jar to Release
         uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: ${{ steps.find_jar.outputs.jar_path }}
           asset_name: ${{ steps.find_jar.outputs.jar_name }}
           asset_content_type: application/java-archive
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

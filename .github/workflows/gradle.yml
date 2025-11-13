@@ -1,0 +1,88 @@
+name: Build & Release Plugin
+
+on:
+  push:
+    # triggers when you push a tag like v1.2.3
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch: {} # manual trigger
+
+permissions:
+  contents: write  # required to create releases & upload assets
+
+jobs:
+  build-and-release:
+    name: Build and create GitHub Release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: [17]  # change to include 8, 11, 17 if you need multiple java builds: [8,11,17]
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed to access tags
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ matrix.java }}
+          cache: 'gradle'
+
+      - name: Cache Gradle wrapper and caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-cache-${{ matrix.java }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-cache-${{ matrix.java }}-
+
+      - name: Show Java version
+        run: java -version
+
+      - name: Set project version from tag if available
+        # if run from a tag like v1.2.3, expose version property to gradle as -Pversion=1.2.3
+        run: |
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" || "${GITHUB_REF}" =~ ^refs/tags/ ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            # strip leading v if present: v1.2.3 -> 1.2.3
+            VERSION="${TAG_NAME#v}"
+            echo "version=${VERSION}" >> $GITHUB_ENV
+          else
+            echo "version=dev" >> $GITHUB_ENV
+          fi
+
+      - name: Build (Gradle)
+        # Use the wrapper if present; fallback to gradle
+        run: |
+          chmod +x ./gradlew
+          # pass -Pversion so build.gradle can use it (see snippet below)
+          ./gradlew --no-daemon clean assemble -Pversion="${{ env.version }}" --stacktrace
+        env:
+          JAVA_TOOL_OPTIONS: ${{ env.GRADLE_OPTS }}
+
+      - name: Locate built JAR
+        id: findjar
+        run: |
+          echo "Searching build/libs for jars..."
+          JAR=$(find build/libs -maxdepth 1 -type f -name "*.jar" ! -name "*sources*" ! -name "*javadoc*" | head -n 1 || true)
+          if [ -z "$JAR" ]; then
+            echo "No jar found!"
+            exit 1
+          fi
+          echo "jar=$JAR" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.ref_name || format('v{0}', env.version) }}
+          name: ${{ github.ref_name || format('v{0}', env.version) }}
+          body: "Automated release for ${{ github.ref_name || env.version }}"
+          draft: false
+          prerelease: false
+          files: ${{ steps.findjar.outputs.jar }}

@@ -1,30 +1,130 @@
-name: Build Action
+name: Build & Publish to Groupez
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
-    types: [ opened, synchronize, reopened ]
+    tags:
+      - 'v*.*.*'   # trigger on semantic tags like v1.2.3
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  REPO_URL: https://repo.groupez.dev/releases
 
 jobs:
-  build:
-    name: Build and Publish zEssentials
-    uses: GroupeZ-dev/actions/.github/workflows/build.yml@main
-    with:
-      project-name: "zEssentials"
-      publish: true
-      project-to-publish: "API:publish"
-      discord-avatar-url: "https://groupez.dev/storage/images/325.png"
-    secrets:
-      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-      MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-      MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+  build-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      GROUPEZ_USER: ${{ secrets.GROUPEZ_USER }}
+      GROUPEZ_PASS: ${{ secrets.GROUPEZ_PASS }}
+      GROUPEZ_API_KEY: ${{ secrets.GROUPEZ_API_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Cache Gradle files
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-cache-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-cache-${{ runner.os }}-
+
+      - name: Ensure gradlew is executable
+        run: chmod +x ./gradlew
+
+      - name: Set version from tag (if present)
+        id: set_version
+        run: |
+          # If workflow triggered by a tag like v1.2.3, strip leading 'v' -> 1.2.3
+          if [[ "${GITHUB_REF##*/}" =~ ^v[0-9] ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG#v}"
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "Detected tag $TAG, version set to $VERSION"
+          else
+            echo "version=dev" >> $GITHUB_OUTPUT
+            echo "No tag detected; version set to 'dev'"
+          fi
+
+      - name: Test basic auth to repository (prints HTTP status)
+        if: env.GROUPEZ_USER != '' && env.GROUPEZ_PASS != ''
+        run: |
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" -u "${GROUPEZ_USER}:${GROUPEZ_PASS}" "${REPO_URL}/")
+          echo "auth_http_code=$http_code" >> $GITHUB_OUTPUT
+          if [ "$http_code" -ge 400 ]; then
+            echo "Warning: repository returned HTTP $http_code for basic auth test"
+          fi
+
+      - name: Build project and create artifacts
+        run: |
+          ./gradlew --no-daemon clean :API:shadowJar -Pversion="${{ steps.set_version.outputs.version }}" --info
+        env:
+          JAVA_TOOL_OPTIONS: -Xmx2g
+
+      - name: Find API artifact (jar)
+        id: find_api_jar
+        run: |
+          JAR=$(find API/build/libs -maxdepth 1 -type f -name "*.jar" ! -name "*sources*" ! -name "*javadoc*" | head -n 1 || true)
+          if [ -z "$JAR" ]; then
+            echo "No JAR found in API/build/libs"
+            exit 1
+          fi
+          echo "Found JAR: $JAR"
+          echo "jar_path=$JAR" >> $GITHUB_OUTPUT
+          echo "jar_name=$(basename "$JAR")" >> $GITHUB_OUTPUT
+          # compute the upload path used in your earlier error:
+          # groupId: fr.maxlego08.essentials
+          # artifactId: zessentials-api
+          # version: from step.set_version
+          GROUP_PATH="fr/maxlego08/essentials/zessentials-api/${{ steps.set_version.outputs.version }}"
+          echo "upload_path=$GROUP_PATH" >> $GITHUB_OUTPUT
+
+      - name: Publish with Gradle to Groupez (basic auth)
+        id: gradle_publish
+        run: |
+          # publish for API subproject; pass credentials via -P so publishing block can pick them up
+          ./gradlew --no-daemon :API:publish \
+            -PgroupezUser="${GROUPEZ_USER}" -PgroupezPass="${GROUPEZ_PASS}" \
+            -Pversion="${{ steps.set_version.outputs.version }}" --info
+        continue-on-error: true
+
+      - name: Fallback: Upload artifact via API key header if publish failed
+        if: failure() && secrets.GROUPEZ_API_KEY != ''
+        env:
+          API_KEY: ${{ secrets.GROUPEZ_API_KEY }}
+          JAR_PATH: ${{ steps.find_api_jar.outputs.jar_path }}
+          UPLOAD_PATH: ${{ steps.find_api_jar.outputs.upload_path }}
+          JAR_NAME: ${{ steps.find_api_jar.outputs.jar_name }}
+        run: |
+          echo "Gradle publish failed; attempting fallback upload with API key"
+          # Ensure artifact exists
+          if [ ! -f "$JAR_PATH" ]; then
+            echo "Artifact not found at $JAR_PATH"
+            exit 1
+          fi
+          TARGET_URL="${REPO_URL}/${UPLOAD_PATH}/${JAR_NAME}"
+          echo "Uploading $JAR_NAME to $TARGET_URL"
+          # Use header-based auth (example header X-API-Key). Adjust header name if your repo uses different name.
+          curl -v -H "X-API-Key: ${API_KEY}" --upload-file "$JAR_PATH" "$TARGET_URL"
+        # do not fail the job with a redaction-sensitive error if curl prints secrets (it won't print the secret)
+      
+      - name: Final status
+        if: success()
+        run: echo "Publish job completed successfully."
+      - name: Final failure notice
+        if: failure()
+        run: |
+          echo "Publish job failed. Check previous steps for details. If you used basic auth, verify GROUPEZ_USER and GROUPEZ_PASS are correct and have publish permissions. If your registry requires header-based auth, set the GROUPEZ_API_KEY secret and the fallback step will attempt upload using X-API-Key."

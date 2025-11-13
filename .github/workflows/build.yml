@@ -96,7 +96,7 @@ jobs:
         continue-on-error: true
 
       - name: Fallback: Upload artifact via API key header if publish failed
-        if: failure() && env.GROUPEZ_API_KEY != ''
+        if: failure()
         env:
           API_KEY: ${{ env.GROUPEZ_API_KEY }}
           JAR_PATH: ${{ steps.find_api_jar.outputs.jar_path }}
@@ -104,12 +104,11 @@ jobs:
           JAR_NAME: ${{ steps.find_api_jar.outputs.jar_name }}
           REPO_URL: ${{ env.REPO_URL }}
         run: |
-          echo "Gradle publish failed; attempting fallback upload with API key header"
           if [ -z "$API_KEY" ]; then
             echo "No API key provided; skipping fallback."
-            exit 1
+            exit 0
           fi
-          if [ ! -f "$JAR_PATH" ]; then
+          if [ -z "$JAR_PATH" ] || [ ! -f "$JAR_PATH" ]; then
             echo "Artifact not found at $JAR_PATH"
             exit 1
           fi

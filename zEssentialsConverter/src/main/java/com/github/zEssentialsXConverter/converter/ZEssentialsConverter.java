@@ -1,7 +1,9 @@
 package com.github.zEssentialsXConverter.converter;
 
 import com.github.zEssentialsXConverter.ZEssentialsXConverter;
+import com.github.zEssentialsXConverter.data.ConfigStorage;
 import com.github.zEssentialsXConverter.data.Home;
+import com.github.zEssentialsXConverter.data.Warp;
 import com.github.zEssentialsXConverter.data.ZUser;
 import com.google.gson.Gson;
 import org.bukkit.command.CommandSender;
@@ -49,7 +51,49 @@ public class ZEssentialsConverter {
             }
         }
 
+        convertWarps(sender);
+
         sender.sendMessage("Conversion process finished.");
+    }
+
+    private void convertWarps(CommandSender sender) {
+        File zEssentialsConfigFile = new File(plugin.getServer().getUpdateFolder() + "/../zEssentials/configstorage.json");
+        if (!zEssentialsConfigFile.exists()) {
+            sender.sendMessage("zEssentials configstorage.json not found!");
+            return;
+        }
+
+        try {
+            Gson gson = new Gson();
+            FileReader reader = new FileReader(zEssentialsConfigFile);
+            ConfigStorage configStorage = gson.fromJson(reader, ConfigStorage.class);
+            reader.close();
+
+            File essentialsWarpFolder = new File(plugin.getServer().getUpdateFolder() + "/../Essentials/warps");
+            if (!essentialsWarpFolder.exists()) {
+                essentialsWarpFolder.mkdirs();
+            }
+
+            if (configStorage.getWarps() != null && !configStorage.getWarps().isEmpty()) {
+                for (Warp warp : configStorage.getWarps()) {
+                    File essentialsWarpFile = new File(essentialsWarpFolder, warp.getName() + ".yml");
+                    YamlConfiguration essentialsConfig = new YamlConfiguration();
+                    essentialsConfig.set("world", warp.getLocation().getLocation().getWorld().getName());
+                    essentialsConfig.set("x", warp.getLocation().getLocation().getX());
+                    essentialsConfig.set("y", warp.getLocation().getLocation().getY());
+                    essentialsConfig.set("z", warp.getLocation().getLocation().getZ());
+                    essentialsConfig.set("yaw", warp.getLocation().getLocation().getYaw());
+                    essentialsConfig.set("pitch", warp.getLocation().getLocation().getPitch());
+                    essentialsConfig.save(essentialsWarpFile);
+                }
+                sender.sendMessage("Converted " + configStorage.getWarps().size() + " warps.");
+            } else {
+                sender.sendMessage("No warps found to convert.");
+            }
+
+        } catch (IOException e) {
+            sender.sendMessage("Error converting warps: " + e.getMessage());
+        }
     }
 
     private void convertUser(File userFile, File essentialsUserFolder) throws IOException {

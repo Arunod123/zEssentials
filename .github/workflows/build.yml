@@ -28,7 +28,7 @@ jobs:
 
       # 4. Build the plugin using Gradle.
       - name: Build with Gradle
-        run: ./gradlew shadowJar
+        run: ./gradlew -p zEssentialsConverter build
         env:
           JAVA_TOOL_OPTIONS: -Xmx2g
 
@@ -43,7 +43,7 @@ jobs:
           # This pattern ONLY finds files named 'zEssentials-*.jar' in the 'target/' directory
           # and IGNORES all files in the 'build/libs/' folders.
           files: |
-            ./**/target/zEssentials*.jar
+            ./zEssentialsConverter/build/libs/*.jar
             
           # Keep the release status (draft/prerelease) the same
           draft: ${{ github.event.release.draft }}

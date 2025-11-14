@@ -24,13 +24,13 @@ public class ZEssentialsConverter {
     }
 
     public void convert(CommandSender sender) {
-        File zEssentialsUserFolder = new File(plugin.getServer().getUpdateFolder() + "/../zEssentials/users");
+        File zEssentialsUserFolder = new File(plugin.getDataFolder().getParentFile(), "zEssentials/users");
         if (!zEssentialsUserFolder.exists()) {
             sender.sendMessage("zEssentials user data folder not found!");
             return;
         }
 
-        File essentialsUserFolder = new File(plugin.getServer().getUpdateFolder() + "/../Essentials/userdata");
+        File essentialsUserFolder = new File(plugin.getDataFolder().getParentFile(), "Essentials/userdata");
         if (!essentialsUserFolder.exists()) {
             essentialsUserFolder.mkdirs();
         }
@@ -57,7 +57,7 @@ public class ZEssentialsConverter {
     }
 
     private void convertWarps(CommandSender sender) {
-        File zEssentialsConfigFile = new File(plugin.getServer().getUpdateFolder() + "/../zEssentials/configstorage.json");
+        File zEssentialsConfigFile = new File(plugin.getDataFolder().getParentFile(), "zEssentials/configstorage.json");
         if (!zEssentialsConfigFile.exists()) {
             sender.sendMessage("zEssentials configstorage.json not found!");
             return;
@@ -69,7 +69,7 @@ public class ZEssentialsConverter {
             ConfigStorage configStorage = gson.fromJson(reader, ConfigStorage.class);
             reader.close();
 
-            File essentialsWarpFolder = new File(plugin.getServer().getUpdateFolder() + "/../Essentials/warps");
+            File essentialsWarpFolder = new File(plugin.getDataFolder().getParentFile(), "Essentials/warps");
             if (!essentialsWarpFolder.exists()) {
                 essentialsWarpFolder.mkdirs();
             }

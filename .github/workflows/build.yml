@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Set up Java (use Java 17 as in your original file)
+      # 2. Set up Java
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -30,43 +30,28 @@ jobs:
         run: chmod +x ./gradlew
 
       # 4. Build the plugin using Gradle.
-      # Many plugins use 'shadowJar' to include dependencies.
-      # If you just use 'build', change 'shadowJar' to 'build'.
       - name: Build with Gradle
         run: ./gradlew shadowJar
         env:
           JAVA_TOOL_OPTIONS: -Xmx2g
 
-      # 5. Find the built .jar file
-      # It searches all 'build/libs' subdirectories for the correct .jar
-      - name: Find plugin .jar
-        id: find_jar
-        run: |
-          # Search for the JAR in *all* 'build/libs' directories, not just the root one.
-          # This will find files like 'Core/build/libs/plugin.jar'
-          JAR_FILE=$(find . -path "*/build/libs/*.jar" ! -name "*sources*" ! -name "*javadoc*" | head -n 1)
-          
-          if [ -z "$JAR_FILE" ]; then
-            echo "No .jar file found in any 'build/libs' directory."
-            echo "--- Listing all JARs found for debugging ---"
-            find . -type f -name "*.jar"
-            exit 1
-          fi
-          
-          echo "Found jar: $JAR_FILE"
-          echo "jar_path=$JAR_FILE" >> $GITHUB_OUTPUT
-          echo "jar_name=$(basename "$JAR_FILE")" >> $GITHUB_OUTPUT
-          
-      # 6. Upload the .jar file to the GitHub Release page
-      - name: Upload .jar to Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 5. Upload ALL .jar files to the GitHub Release
+      # This step replaces the old 'find_jar' and 'upload' steps.
+      # It uses a modern action that supports wildcards (globs) to upload all files.
+      - name: Upload all JARs to Release
+        uses: softprops/action-gh-release@v2
         with:
-          # This is the URL for uploading found in the release event
-          upload_url: ${{ github.event.release.upload_url }}
-          # This is the path to the file we found in the previous step
-          asset_path: ${{ steps.find_jar.outputs.jar_path }}
-          # This is the name it will have on the release page
-          asset_name: ${{ steps.find_jar.outputs.jar_name }}
-          asset_content_type: application/java-archive
+          # Tell the action to update the release that triggered this workflow
+          tag_name: ${{ github.event.release.tag_name }}
+          
+          # Use wildcards to find all JARs to upload.
+          # This finds all .jar files in any 'build/libs' sub-directory,
+          # and then excludes 'sources' and 'javadoc' jars.
+          files: |
+            ./**/build/libs/*.jar
+            !./**/build/libs/*sources.jar
+            !./**/build/libs/*javadoc.jar
+          
+          # Keep the release status (draft/prerelease) the same
+          draft: ${{ github.event.release.draft }}
+          prerelease: ${{ github.event.release.prerelease }}

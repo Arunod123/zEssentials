@@ -43,7 +43,7 @@ jobs:
           # This pattern ONLY finds files named 'zEssentials-*.jar' in the 'target/' directory
           # and IGNORES all files in the 'build/libs/' folders.
           files: |
-            ./**/target/zEssentials-*.jar
+            ./**/target/zEssentials*.jar
             
           # Keep the release status (draft/prerelease) the same
           draft: ${{ github.event.release.draft }}

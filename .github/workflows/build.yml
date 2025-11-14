@@ -1,6 +1,3 @@
-# This file tells GitHub how to build your plugin.
-# It must go in a folder named .github/workflows/ at the root of your project.
-
 name: Build Minecraft Plugin
 
 on:
@@ -35,23 +32,19 @@ jobs:
         env:
           JAVA_TOOL_OPTIONS: -Xmx2g
 
-      # 5. Upload ALL .jar files to the GitHub Release
-      # This step replaces the old 'find_jar' and 'upload' steps.
-      # It uses a modern action that supports wildcards (globs) to upload all files.
-      - name: Upload all JARs to Release
+      # 5. Upload FINAL JAR ONLY
+      # This step is highly restrictive, focusing only on the output in the target/ folder.
+      - name: Upload FINAL JAR ONLY to Release
         uses: softprops/action-gh-release@v2
         with:
           # Tell the action to update the release that triggered this workflow
           tag_name: ${{ github.event.release.tag_name }}
           
-          # Use wildcards to find all JARs to upload.
-          # This finds all .jar files in any 'build/libs' sub-directory,
-          # and then excludes 'sources' and 'javadoc' jars.
+          # This pattern ONLY finds files named 'zEssentials-*.jar' in the 'target/' directory
+          # and IGNORES all files in the 'build/libs/' folders.
           files: |
-            ./**/build/libs/*.jar
-            !./**/build/libs/*sources.jar
-            !./**/build/libs/*javadoc.jar
-          
+            ./**/target/zEssentials-*.jar
+            
           # Keep the release status (draft/prerelease) the same
           draft: ${{ github.event.release.draft }}
           prerelease: ${{ github.event.release.prerelease }}
